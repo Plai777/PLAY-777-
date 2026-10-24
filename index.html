@@ -240,31 +240,111 @@ count++;
 if(count>=(turbo?7:17)){clearInterval(timer);timer=null;finishSpin(bet)}
 },turbo?65:105);
 }
-function finishSpin(bet){
-spinning=false;let win=0,wildWin=false;
-for(let row=0;row<4;row++){
-const line=[tiles[row],tiles[4+row],tiles[8+row]];
-const names=line.map(t=>t.dataset.sym);
-const wilds=line.filter(t=>t.dataset.w==='1').length;
-if(wilds===3){win=Math.max(win,bet*10);wildWin=true}
-else if(wilds===2){win=Math.max(win,bet*3)}
-else if(names[0]===names[1]||names[1]===names[2]||names[0]===names[2])win=Math.max(win,bet);
+
+function finishSpin(bet) {
+  spinning = false;
+
+  let win = 0;
+  let wildWin = false;
+  let winningLines = 0;
+
+  // Multiplicadores iniciais de teste para 3 símbolos iguais.
+  const payouts = {
+    '🍀': 0.3,
+    '🌙': 0.4,
+    '⭐': 0.5,
+    '🌸': 0.6,
+    '💜': 0.8,
+    '💎': 1.2,
+    '🧭': 1.5,
+    '🌌': 2.0,
+    '🦉': 2.5,
+    '🐺': 3.0,
+    '7': 4.0
+  };
+
+  // A grade atual tem 3 colunas de 4 símbolos.
+  // Cada linha horizontal é avaliada separadamente.
+  for (let row = 0; row < 4; row++) {
+    const line = [
+      tiles[row],
+      tiles[4 + row],
+      tiles[8 + row]
+    ];
+
+    const names = line.map(tile => tile.dataset.sym);
+    const wilds = line.filter(tile => tile.dataset.w === '1').length;
+
+    // Três WILDs: prêmio especial.
+    if (wilds === 3) {
+      win += bet * 10;
+      winningLines++;
+      wildWin = true;
+      continue;
+    }
+
+    // Precisamos de três símbolos que possam formar
+    // uma combinação válida, não apenas um par.
+    const normalSymbols = names.filter(
+      (name, i) => line[i].dataset.w !== '1'
+    );
+
+    if (normalSymbols.length === 0) continue;
+
+    const symbol = normalSymbols[0];
+    const allMatch = normalSymbols.every(name => name === symbol);
+
+    if (!allMatch) continue;
+
+    const multiplier = payouts[symbol];
+
+    if (multiplier !== undefined) {
+      win += bet * multiplier;
+      winningLines++;
+    }
+  }
+
+  // Credita a soma de todas as linhas premiadas.
+  prize = win;
+  balance += win;
+
+  if (win > 0) {
+    document.getElementById('message').textContent =
+      'Vitória em ' + winningLines + ' linha(s)! Prêmio demo: ' + cash(win);
+
+    if (wildWin) {
+      document.getElementById('wild').classList.add('show');
+      document.getElementById('message').textContent =
+        'WILD ×10! Prêmio demonstrativo: ' + cash(win);
+    }
+  } else {
+    document.getElementById('message').textContent =
+      'Nenhuma combinação premiada nesta rodada.';
+  }
+
+  updateUI();
+
+  if (auto) {
+    if (!infinite) {
+      autoLeft--;
+      if (autoLeft <= 0) {
+        stopAuto();
+        return;
+      }
+    }
+
+    if (balance >= bets[betIndex]) {
+      setTimeout(() => {
+        if (auto) startSpin();
+      }, turbo ? 180 : 550);
+    } else {
+      stopAuto();
+      document.getElementById('message').textContent =
+        'Rodadas automáticas encerradas: saldo demo insuficiente.';
+    }
+  }
 }
-if(win>0){
-balance+=win;prize=win;
-document.getElementById('message').textContent='Combinação premiada! + '+cash(win)+' em créditos demo.';
-if(wildWin){
-document.getElementById('wild').classList.add('show');
-document.getElementById('message').textContent='WILD ×10! Prêmio demonstrativo: '+cash(win);
-}
-}else document.getElementById('message').textContent='Rodada encerrada. Tente outra combinação.';
-updateUI();
-if(auto){
-if(!infinite){autoLeft--;if(autoLeft<=0){stopAuto();return}}
-if(balance>=bets[betIndex])setTimeout(()=>{if(auto)startSpin()},turbo?180:550);
-else{stopAuto();document.getElementById('message').textContent='Rodadas automáticas encerradas: saldo demo insuficiente.'}
-}
-}
+
 function resetDemo(){
 if(timer)clearInterval(timer);timer=null;spinning=false;stopAuto();balance=100000;prize=0;
 document.getElementById('wild').classList.remove('show');
