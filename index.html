@@ -31,8 +31,6 @@ h2{font-size:19px;margin:24px 0 11px}
 .fav{background:#40202a;color:#f4d38b;border:0;border-radius:8px;padding:9px}
 nav{position:fixed;z-index:4;bottom:0;left:0;right:0;background:#210a12;border-top:1px solid #63402d;display:flex;justify-content:space-around;padding:13px 4px;color:#e6c78f;font-size:12px}
 nav span{cursor:pointer}
-
-/* AURA DA SORTE */
 #aura{display:none;position:fixed;z-index:100;inset:0;overflow:auto;overscroll-behavior:contain;background:#061127;color:white;font-family:Arial,sans-serif;padding:5px 7px calc(8px + env(safe-area-inset-bottom));isolation:isolate}
 #aura.open{display:block}
 #aura:before{content:"";position:fixed;z-index:-3;inset:0;background:linear-gradient(180deg,#06122b 0%,#07223b 45%,#06172a 70%,#020918 100%)}
@@ -80,6 +78,11 @@ nav span{cursor:pointer}
 .wild-overlay.show{display:block}
 @keyframes burst{0%{transform:scale(.2);opacity:0}70%{transform:scale(1.13);opacity:1}100%{transform:scale(1);opacity:1}}
 .footnote{text-align:center;font-size:8px;color:#a6c6e0;margin-top:5px}
+.paytable{margin-top:7px;padding:7px 9px;border:1px solid #317fa4;border-radius:8px;background:#04142dcc;color:#d8f5ff;font-size:9px}
+.paytable summary{cursor:pointer;font-weight:bold;color:#ffe9a0}
+.paygrid{display:grid;grid-template-columns:1fr 1fr;gap:4px 12px;margin-top:7px}
+.paygrid span{display:flex;justify-content:space-between;gap:6px}
+.paygrid b{color:#ffe9a0}
 @media(max-height:700px){.brand-title{margin-top:4px;font-size:23px}.subtitle{margin-bottom:4px}.stats{padding:4px 8px;margin-bottom:4px}.symbol{font-size:27px}.reel-frame{padding:4px}.controls{margin-top:5px}.bottomline{margin-top:4px}}
 @media(min-width:600px){.aura-wrap{width:440px}.symbol{font-size:36px}}
 </style>
@@ -120,7 +123,7 @@ nav span{cursor:pointer}
 <div class="wild-overlay" id="wild">WILD ×10</div>
 <div class="controls">
 <button class="round" onclick="changeBet(-1)" aria-label="Diminuir aposta">−</button>
-<div class="betbox"><small>APOSTA</small><strong id="bet">R$ 0,10</strong></div>
+<div class="betbox"><small>APOSTA POR RODADA</small><strong id="bet">R$ 0,10</strong></div>
 <button class="round" onclick="changeBet(1)" aria-label="Aumentar aposta">＋</button>
 <button class="spin" id="spin" onclick="spinOrStop()" aria-label="Girar">⟳</button>
 <button class="mode" id="turbo" onclick="toggleTurbo()"><span class="ico">ϟ</span>TURBO</button>
@@ -134,6 +137,11 @@ nav span{cursor:pointer}
 </div>
 <div class="bottomline"><span>SALDO&nbsp; <b id="balanceBottom">R$ 1.000,00</b></span><span>CRÉDITOS DEMO</span><span>PRÊMIO&nbsp; <b id="prizeBottom">R$ 0,00</b></span></div>
 <p id="message" class="message">Escolha a aposta e toque no botão circular para girar.</p>
+<details class="paytable">
+<summary>TABELA DE PRÊMIOS · 3 SÍMBOLOS</summary>
+<div class="paygrid" id="paygrid"></div>
+<p style="margin:7px 0 0;color:#a6c6e0">Multiplicadores aplicados à aposta total da rodada. Os créditos são fictícios; os resultados são aleatórios e não representam retorno garantido.</p>
+</details>
 <p class="footnote">JOGO DE DEMONSTRAÇÃO · CRÉDITOS SEM VALOR MONETÁRIO REAL</p>
 </div>
 </div>
@@ -175,18 +183,38 @@ const sym=[
 {e:'7',c:'gold'},{e:'🌸',c:'gem'},{e:'🧭',c:''},{e:'WILD',c:'wild',w:true}
 ];
 const bets=[10,20,30,50,100,200,500,1000];
-let betIndex=0,balance=100000,prize=0,spinning=false,timer=null,turbo=false,auto=false,infinite=false,autoLeft=0;
+const payouts={
+'🍀':0.5,'🌙':0.75,'⭐':1,'🌸':1.25,'💜':1.5,
+'💎':2,'🧭':3,'🌌':4,'🦉':6,'🐺':8,'7':10
+};
+const wildMultiplier=10;
+const paylines=[
+[0,0,0],
+[1,1,1],
+[2,3,2],
+[2,2,0],
+[0,1,2],
+[1,2,1],
+[0,2,0],
+[2,1,2],
+[0,3,0],
+[2,0,2]
+];
+let betIndex=0,balance=100000,prize=0,spinning=false,timer=null,turbo=false,auto=false,infinite=false,autoLeft=0,autoTimer=null,currentStake=0;
 const reels=document.getElementById('reels');
-let tiles=[];
+let tiles=[],reelTiles=[[],[],[]];
 function cash(n){return 'R$ '+(n/100).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})}
 function pick(){return sym[Math.floor(Math.random()*(sym.length-1))]}
 function drawTile(tile,s){tile.className='symbol '+s.c;tile.textContent=s.e;tile.dataset.sym=s.e;tile.dataset.w=s.w?'1':'0'}
 function initReels(){
-reels.innerHTML='';tiles=[];
+reels.innerHTML='';tiles=[];reelTiles=[[],[],[]];
+const heights=[3,4,3];
 for(let col=0;col<3;col++){
 const reel=document.createElement('div');reel.className='reel';
-for(let row=0;row<4;row++){
-const tile=document.createElement('div');reel.appendChild(tile);tiles.push(tile);drawTile(tile,pick());
+reel.style.gridTemplateRows=`repeat(${heights[col]},minmax(0,1fr))`;
+for(let row=0;row<heights[col];row++){
+const tile=document.createElement('div');
+reel.appendChild(tile);tiles.push(tile);reelTiles[col].push(tile);drawTile(tile,pick());
 }
 reels.appendChild(reel);
 }
@@ -209,153 +237,112 @@ betIndex=Math.max(0,Math.min(bets.length-1,betIndex+d));updateUI();
 function toggleTurbo(){turbo=!turbo;updateUI()}
 function toggleAuto(){
 if(auto){stopAuto();return}
+if(spinning)return;
 auto=true;infinite=false;autoLeft=Number(document.getElementById('autoCount').value);updateUI();startSpin();
 }
 function toggleInfinite(){
 if(auto&&infinite){stopAuto();return}
-auto=true;infinite=true;autoLeft=Infinity;updateUI();if(!spinning)startSpin();
+if(spinning)return;
+auto=true;infinite=true;autoLeft=Infinity;updateUI();startSpin();
 }
-function stopAuto(){auto=false;infinite=false;autoLeft=0;updateUI()}
+function stopAuto(){
+auto=false;infinite=false;autoLeft=0;
+if(autoTimer){clearTimeout(autoTimer);autoTimer=null}
+updateUI();
+}
 function spinOrStop(){
 if(spinning){
-clearInterval(timer);timer=null;spinning=false;
+if(timer){clearInterval(timer);timer=null}
+spinning=false;
+balance+=currentStake;currentStake=0;
 if(auto)stopAuto();
-document.getElementById('message').textContent='Rodada interrompida.';
+document.getElementById('wild').classList.remove('show');
+document.getElementById('message').textContent='Rodada cancelada. A aposta foi devolvida ao saldo demo.';
 updateUI();return;
 }
 startSpin();
 }
 function startSpin(){
 if(spinning)return;
-const bet=bets[betIndex];
-if(balance<bet){document.getElementById('message').textContent='Saldo demo insuficiente. Reinicie a demonstração.';stopAuto();return}
-balance-=bet;prize=0;spinning=true;
+const stake=bets[betIndex];
+if(balance<stake){document.getElementById('message').textContent='Saldo demo insuficiente. Reinicie a demonstração.';stopAuto();return}
+balance-=stake;currentStake=stake;prize=0;spinning=true;
 document.getElementById('wild').classList.remove('show');
 document.getElementById('message').textContent='A aurora está girando…';
 updateUI();
 let count=0;
 timer=setInterval(()=>{
-tiles.forEach(t=>drawTile(t,Math.random()<.035?sym[11]:pick()));
+tiles.forEach(t=>drawTile(t,Math.random()<.025?sym[11]:pick()));
 count++;
-if(count>=(turbo?7:17)){clearInterval(timer);timer=null;finishSpin(bet)}
+if(count>=(turbo?7:17)){
+clearInterval(timer);timer=null;
+tiles.forEach(t=>drawTile(t,pick()));
+finishSpin(stake);
+}
 },turbo?65:105);
 }
-
-function finishSpin(bet) {
-  spinning = false;
-
-  let win = 0;
-  let wildWin = false;
-  let winningLines = 0;
-
-  // Multiplicadores iniciais de teste para 3 símbolos iguais.
-  const payouts = {
-    '🍀': 0.3,
-    '🌙': 0.4,
-    '⭐': 0.5,
-    '🌸': 0.6,
-    '💜': 0.8,
-    '💎': 1.2,
-    '🧭': 1.5,
-    '🌌': 2.0,
-    '🦉': 2.5,
-    '🐺': 3.0,
-    '7': 4.0
-  };
-
-  // A grade atual tem 3 colunas de 4 símbolos.
-  // Cada linha horizontal é avaliada separadamente.
-  for (let row = 0; row < 4; row++) {
-    const line = [
-      tiles[row],
-      tiles[4 + row],
-      tiles[8 + row]
-    ];
-
-    const names = line.map(tile => tile.dataset.sym);
-    const wilds = line.filter(tile => tile.dataset.w === '1').length;
-
-    // Três WILDs: prêmio especial.
-    if (wilds === 3) {
-      win += bet * 10;
-      winningLines++;
-      wildWin = true;
-      continue;
-    }
-
-    // Precisamos de três símbolos que possam formar
-    // uma combinação válida, não apenas um par.
-    const normalSymbols = names.filter(
-      (name, i) => line[i].dataset.w !== '1'
-    );
-
-    if (normalSymbols.length === 0) continue;
-
-    const symbol = normalSymbols[0];
-    const allMatch = normalSymbols.every(name => name === symbol);
-
-    if (!allMatch) continue;
-
-    const multiplier = payouts[symbol];
-
-    if (multiplier !== undefined) {
-      win += bet * multiplier;
-      winningLines++;
-    }
-  }
-
-  // Credita a soma de todas as linhas premiadas.
-  prize = win;
-  balance += win;
-
-  if (win > 0) {
-    document.getElementById('message').textContent =
-      'Vitória em ' + winningLines + ' linha(s)! Prêmio demo: ' + cash(win);
-
-    if (wildWin) {
-      document.getElementById('wild').classList.add('show');
-      document.getElementById('message').textContent =
-        'WILD ×10! Prêmio demonstrativo: ' + cash(win);
-    }
-  } else {
-    document.getElementById('message').textContent =
-      'Nenhuma combinação premiada nesta rodada.';
-  }
-
-  updateUI();
-
-  if (auto) {
-    if (!infinite) {
-      autoLeft--;
-      if (autoLeft <= 0) {
-        stopAuto();
-        return;
-      }
-    }
-
-    if (balance >= bets[betIndex]) {
-      setTimeout(() => {
-        if (auto) startSpin();
-      }, turbo ? 180 : 550);
-    } else {
-      stopAuto();
-      document.getElementById('message').textContent =
-        'Rodadas automáticas encerradas: saldo demo insuficiente.';
-    }
-  }
+function finishSpin(stake){
+spinning=false;currentStake=0;
+let totalWin=0,wildWin=false;
+const wins=[];
+for(let i=0;i<paylines.length;i++){
+const [r0,r1,r2]=paylines[i];
+const lineTiles=[reelTiles[0][r0],reelTiles[1][r1],reelTiles[2][r2]];
+const wildCount=lineTiles.filter(t=>t.dataset.w==='1').length;
+let symbol=null,multiplier=0;
+if(wildCount===3){
+symbol='WILD';multiplier=wildMultiplier;wildWin=true;
+}else{
+const normalNames=lineTiles.filter(t=>t.dataset.w!=='1').map(t=>t.dataset.sym);
+if(normalNames.length&&normalNames.every(s=>s===normalNames[0])){
+symbol=normalNames[0];multiplier=payouts[symbol]||0;
 }
-
+}
+if(multiplier>0){
+const amount=Math.round(stake*multiplier);
+totalWin+=amount;
+wins.push({line:i+1,symbol,multiplier,amount});
+}
+}
+prize=totalWin;balance+=totalWin;
+if(totalWin>0){
+const summary=wins.map(w=>`L${w.line} ${w.symbol} ×${w.multiplier}: ${cash(w.amount)}`).join(' · ');
+document.getElementById('message').textContent=`${wins.length} linha(s) premiada(s)! Total ${cash(totalWin)}. ${summary}`;
+if(wildWin)document.getElementById('wild').classList.add('show');
+}else{
+document.getElementById('message').textContent='Nenhuma combinação premiada nesta rodada.';
+}
+updateUI();
+if(auto){
+if(!infinite){autoLeft--;if(autoLeft<=0){stopAuto();return}}
+if(balance>=bets[betIndex]){
+autoTimer=setTimeout(()=>{autoTimer=null;if(auto)startSpin()},turbo?180:550);
+}else{
+stopAuto();document.getElementById('message').textContent='Rodadas automáticas encerradas: saldo demo insuficiente.';
+}
+}
+}
+function renderPaytable(){
+const order=['🍀','🌙','⭐','🌸','💜','💎','🧭','🌌','🦉','🐺','7'];
+document.getElementById('paygrid').innerHTML=order.map(s=>`<span>${s} + WILD <b>×${payouts[s]}</b></span>`).join('')+`<span>3 WILDs <b>×${wildMultiplier}</b></span>`;
+}
 function resetDemo(){
-if(timer)clearInterval(timer);timer=null;spinning=false;stopAuto();balance=100000;prize=0;
+if(timer)clearInterval(timer);timer=null;
+if(autoTimer)clearTimeout(autoTimer);autoTimer=null;
+spinning=false;currentStake=0;stopAuto();balance=100000;prize=0;
 document.getElementById('wild').classList.remove('show');
 document.getElementById('message').textContent='Saldo demo reiniciado.';
 initReels();updateUI();
 }
 function closeAura(){
-if(timer)clearInterval(timer);timer=null;spinning=false;stopAuto();
+if(timer)clearInterval(timer);timer=null;
+if(autoTimer)clearTimeout(autoTimer);autoTimer=null;
+if(spinning&&currentStake)balance+=currentStake;
+currentStake=0;spinning=false;stopAuto();
 document.getElementById('aura').classList.remove('open');document.body.style.overflow='';
+updateUI();
 }
-initReels();updateUI();
+initReels();renderPaytable();updateUI();
 </script>
 </body>
 </html>
